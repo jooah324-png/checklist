@@ -27,6 +27,7 @@
   }
   .btn:active { background: #242c37; }
   .btn.danger-armed { border-color: #ff4d6d; color: #ff5c78; font-weight: 600; }
+  .btn.tab-active { border-color: #2f6feb; background: #2f6feb; color: #fff; font-weight: 700; }
   .hint { font-size: 12px; color: #6d7885; }
 
   /* ---------- layout ---------- */
@@ -181,8 +182,10 @@
     <span class="progress" id="progress"></span>
   </header>
   <div class="toolbar">
-    <button class="btn" id="newWeekBtn">새 주 시작</button>
-    <span class="hint">완료 업무는 삭제되고, 미완료 업무는 전체 과업 리스트로 돌아갑니다</span>
+    <button class="btn tab tab-active" id="weekThisBtn">이번 주</button>
+    <button class="btn tab" id="weekNextBtn">다음 주</button>
+    <button class="btn" id="newWeekBtn">주 마감 정리</button>
+    <span class="hint">주가 바뀌면 완료 업무는 자동 정리되고, 미완료 업무는 전체 과업 리스트로 돌아갑니다</span>
   </div>
 
   <div class="layout">
@@ -213,7 +216,7 @@
     <input type="file" id="importFile" accept=".json" style="display:none">
     <button class="btn" id="syncBtn">실시간 동기화 설정</button>
     <span class="sync-status" id="syncStatus">동기화: 사용 안 함 (이 기기에만 저장)</span>
-    <span class="hint" style="margin-left:auto">v11</span>
+    <span class="hint" style="margin-left:auto">v12</span>
   </footer>
 </div>
 <!-- 날짜 선택 다이얼로그 -->
@@ -319,37 +322,81 @@
 
   function uid() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
-  /* ---- week range ---- */
+  /* ---- 주 계산 ---- */
   function fmt(d) { return (d.getMonth() + 1) + '/' + d.getDate(); }
   var now = new Date();
   var weekStart = new Date(now);
   weekStart.setDate(now.getDate() - (now.getDay() + 6) % 7); // 이번 주 월요일
+  var curWeekKey = ymd(weekStart);
+  var viewOffset = 0; // 0 = 이번 주, 1 = 다음 주
+  function viewWeekDate() {
+    var d = new Date(weekStart); d.setDate(weekStart.getDate() + viewOffset * 7); return d;
+  }
+  function viewWeekKey() { return ymd(viewWeekDate()); }
+
+  /* ---- 주 데이터 마이그레이션 + 지난 주 자동 정리 ----
+     - week가 없는 요일 업무 → 이번 주로 간주
+     - 지난 주 업무: 완료 → 삭제, 미완료 → 전체 과업 리스트로 이월 */
   (function () {
-    var sun = new Date(weekStart); sun.setDate(weekStart.getDate() + 6);
-    document.getElementById('weekRange').textContent = fmt(weekStart) + ' ~ ' + fmt(sun);
+    var changed = false;
+    state.tasks.forEach(function (t) {
+      if (t.loc !== 'backlog' && t.loc !== 'memo' && !t.week) { t.week = curWeekKey; changed = true; }
+    });
+    var kept = [];
+    state.tasks.forEach(function (t) {
+      if (t.loc !== 'backlog' && t.loc !== 'memo' && t.week < curWeekKey) {
+        changed = true;
+        if (t.done) return;                 // 지난 주 완료 업무는 정리
+        t.loc = 'backlog'; t.week = null;   // 미완료는 이월
+      }
+      kept.push(t);
+    });
+    state.tasks = kept;
+    if (changed) { state.updatedAt = Date.now(); saveState(state); }
   })();
 
-  /* ---- day sections (주말 + 대한민국 공휴일 표시) ---- */
-  /* 왼쪽 열: 월·화·수 / 오른쪽 열: 목·금·토·일 */
+  /* ---- day sections (주말 + 대한민국 공휴일 표시) ----
+     왼쪽 열: 월·화·수 / 오른쪽 열: 목·금·토·일 */
   var daysEl = document.getElementById('days');
-  var colL = document.createElement('div'); colL.className = 'day-col';
-  var colR = document.createElement('div'); colR.className = 'day-col';
-  daysEl.appendChild(colL); daysEl.appendChild(colR);
-  DAYS.forEach(function (d, idx) {
-    var date = new Date(weekStart); date.setDate(weekStart.getDate() + idx);
-    var holidayName = HOLIDAYS[ymd(date)] || null;
-    var isRed = d.holiday || !!holidayName;
-    var badge = holidayName ? holidayName : (d.holiday ? '휴일' : null);
-    var sec = document.createElement('section');
-    sec.className = 'day' + (isRed ? ' holiday' : '');
-    sec.innerHTML =
-      '<div class="day-head">' + d.name +
-      ' <span class="date">' + fmt(date) + '</span>' +
-      (badge ? ' <span class="badge-holiday">' + badge + '</span>' : '') +
-      ' <span class="cnt" id="cnt-' + d.key + '"></span></div>' +
-      '<div class="task-list" data-loc="' + d.key + '" id="list-' + d.key + '"></div>';
-    (idx < 3 ? colL : colR).appendChild(sec);
-  });
+  function buildDays() {
+    daysEl.innerHTML = '';
+    var colL = document.createElement('div'); colL.className = 'day-col';
+    var colR = document.createElement('div'); colR.className = 'day-col';
+    daysEl.appendChild(colL); daysEl.appendChild(colR);
+    var base = viewWeekDate();
+    DAYS.forEach(function (d, idx) {
+      var date = new Date(base); date.setDate(base.getDate() + idx);
+      var holidayName = HOLIDAYS[ymd(date)] || null;
+      var isRed = d.holiday || !!holidayName;
+      var badge = holidayName ? holidayName : (d.holiday ? '휴일' : null);
+      var sec = document.createElement('section');
+      sec.className = 'day' + (isRed ? ' holiday' : '');
+      sec.innerHTML =
+        '<div class="day-head">' + d.name +
+        ' <span class="date">' + fmt(date) + '</span>' +
+        (badge ? ' <span class="badge-holiday">' + badge + '</span>' : '') +
+        ' <span class="cnt" id="cnt-' + d.key + '"></span></div>' +
+        '<div class="task-list" data-loc="' + d.key + '" id="list-' + d.key + '"></div>';
+      (idx < 3 ? colL : colR).appendChild(sec);
+    });
+    var end = new Date(base); end.setDate(base.getDate() + 6);
+    document.getElementById('weekRange').textContent =
+      fmt(base) + ' ~ ' + fmt(end) + (viewOffset === 1 ? ' (다음 주)' : '');
+  }
+  buildDays();
+
+  /* ---- 이번 주 / 다음 주 탭 ---- */
+  var weekThisBtn = document.getElementById('weekThisBtn');
+  var weekNextBtn = document.getElementById('weekNextBtn');
+  function setWeekView(offset) {
+    viewOffset = offset;
+    weekThisBtn.classList.toggle('tab-active', offset === 0);
+    weekNextBtn.classList.toggle('tab-active', offset === 1);
+    buildDays();
+    render();
+  }
+  weekThisBtn.addEventListener('click', function () { setWeekView(0); });
+  weekNextBtn.addEventListener('click', function () { setWeekView(1); });
 
   /* ---- task card ---- */
   function taskCard(t) {
@@ -445,10 +492,14 @@
   /* ---- render ---- */
   function render() {
     var locs = ['backlog', 'memo'].concat(DAYS.map(function (d) { return d.key; }));
+    var vk = viewWeekKey();
     locs.forEach(function (loc) {
       var list = document.getElementById('list-' + loc);
       list.innerHTML = '';
-      var items = state.tasks.filter(function (t) { return t.loc === loc; });
+      var isDay = (loc !== 'backlog' && loc !== 'memo');
+      var items = state.tasks.filter(function (t) {
+        return t.loc === loc && (!isDay || t.week === vk);
+      });
       items.forEach(function (t) { list.appendChild(taskCard(t)); });
       if (!items.length) {
         var note = document.createElement('div');
@@ -463,7 +514,9 @@
         document.getElementById('cnt-' + loc).textContent = items.length ? (doneItems + '/' + items.length) : '';
       }
     });
-    var assigned = state.tasks.filter(function (t) { return t.loc !== 'backlog' && t.loc !== 'memo'; });
+    var assigned = state.tasks.filter(function (t) {
+      return t.loc !== 'backlog' && t.loc !== 'memo' && t.week === vk;
+    });
     var done = assigned.filter(function (t) { return t.done; }).length;
     document.getElementById('progress').textContent = '완료 ' + done + ' / 전체 ' + assigned.length;
     document.getElementById('backlogCnt').textContent =
@@ -597,19 +650,23 @@
       var idx = 0, node = ph.previousElementSibling;
       while (node) { if (node.classList.contains('task') && node !== d.card) idx++; node = node.previousElementSibling; }
       ph.remove();
-      // state 재배열
+      // state 재배열 (같은 주·같은 위치의 카드들 기준)
+      var isDayLoc = (newLoc !== 'backlog' && newLoc !== 'memo');
+      var vk = viewWeekKey();
+      function inList(k) { return k.loc === newLoc && (!isDayLoc || k.week === vk); }
       state.tasks = state.tasks.filter(function (k) { return k.id !== d.task.id; });
       d.task.loc = newLoc;
-      var targetIds = state.tasks.filter(function (k) { return k.loc === newLoc; });
+      d.task.week = isDayLoc ? vk : null;
+      var targetIds = state.tasks.filter(inList);
       if (idx >= targetIds.length) {
         // 해당 위치의 마지막 뒤에 삽입
         var lastOfLoc = -1;
-        for (var i = 0; i < state.tasks.length; i++) if (state.tasks[i].loc === newLoc) lastOfLoc = i;
+        for (var i = 0; i < state.tasks.length; i++) if (inList(state.tasks[i])) lastOfLoc = i;
         state.tasks.splice(lastOfLoc + 1, 0, d.task);
       } else {
         var seen = 0, insertAt = state.tasks.length;
         for (var j = 0; j < state.tasks.length; j++) {
-          if (state.tasks[j].loc === newLoc) {
+          if (inList(state.tasks[j])) {
             if (seen === idx) { insertAt = j; break; }
             seen++;
           }
@@ -671,14 +728,19 @@
     nwOverlay.classList.remove('show');
   });
   document.getElementById('nwCarry').addEventListener('click', function () {
-    // 기억해둘 일(memo)은 새 주 시작과 무관하게 그대로 유지
-    state.tasks = state.tasks.filter(function (t) { return !t.done || t.loc === 'memo'; });
-    state.tasks.forEach(function (t) { if (t.loc !== 'backlog' && t.loc !== 'memo') t.loc = 'backlog'; });
+    // 지금 보고 있는 주만 정리. Reminder(memo)는 항상 그대로 유지
+    var vk = viewWeekKey();
+    function target(t) { return t.loc !== 'backlog' && t.loc !== 'memo' && t.week === vk; }
+    state.tasks = state.tasks.filter(function (t) { return !(target(t) && t.done); });
+    state.tasks.forEach(function (t) { if (target(t)) { t.loc = 'backlog'; t.week = null; } });
     nwOverlay.classList.remove('show');
     persistAndRender();
   });
   document.getElementById('nwKeep').addEventListener('click', function () {
-    state.tasks = state.tasks.filter(function (t) { return !t.done || t.loc === 'memo'; });
+    var vk = viewWeekKey();
+    state.tasks = state.tasks.filter(function (t) {
+      return !(t.loc !== 'backlog' && t.loc !== 'memo' && t.week === vk && t.done);
+    });
     nwOverlay.classList.remove('show');
     persistAndRender();
   });
