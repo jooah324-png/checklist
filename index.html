@@ -30,7 +30,7 @@
   .hint { font-size: 12px; color: #6d7885; }
 
   /* ---------- layout ---------- */
-  .layout { display: grid; grid-template-columns: 1fr 300px; gap: 16px; align-items: start; }
+  .layout { display: grid; grid-template-columns: 1fr 300px; grid-template-rows: auto 1fr; gap: 16px; align-items: start; }
   .days { grid-column: 1; grid-row: 1 / span 2; }
   .backlog-panel { grid-column: 2; }
   @media (max-width: 800px) {
@@ -41,7 +41,8 @@
   }
 
   /* ---------- day sections ---------- */
-  .days { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .days { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+  .day-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   @media (max-width: 800px) { .days { grid-template-columns: 1fr; } }
   .day { background: #1c2129; border: 1px solid #2b323d; border-radius: 10px; overflow: hidden; }
   .day-head {
@@ -212,7 +213,7 @@
     <input type="file" id="importFile" accept=".json" style="display:none">
     <button class="btn" id="syncBtn">실시간 동기화 설정</button>
     <span class="sync-status" id="syncStatus">동기화: 사용 안 함 (이 기기에만 저장)</span>
-    <span class="hint" style="margin-left:auto">v9</span>
+    <span class="hint" style="margin-left:auto">v11</span>
   </footer>
 </div>
 <!-- 날짜 선택 다이얼로그 -->
@@ -329,7 +330,11 @@
   })();
 
   /* ---- day sections (주말 + 대한민국 공휴일 표시) ---- */
+  /* 왼쪽 열: 월·화·수 / 오른쪽 열: 목·금·토·일 */
   var daysEl = document.getElementById('days');
+  var colL = document.createElement('div'); colL.className = 'day-col';
+  var colR = document.createElement('div'); colR.className = 'day-col';
+  daysEl.appendChild(colL); daysEl.appendChild(colR);
   DAYS.forEach(function (d, idx) {
     var date = new Date(weekStart); date.setDate(weekStart.getDate() + idx);
     var holidayName = HOLIDAYS[ymd(date)] || null;
@@ -343,7 +348,7 @@
       (badge ? ' <span class="badge-holiday">' + badge + '</span>' : '') +
       ' <span class="cnt" id="cnt-' + d.key + '"></span></div>' +
       '<div class="task-list" data-loc="' + d.key + '" id="list-' + d.key + '"></div>';
-    daysEl.appendChild(sec);
+    (idx < 3 ? colL : colR).appendChild(sec);
   });
 
   /* ---- task card ---- */
