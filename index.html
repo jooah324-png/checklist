@@ -49,6 +49,8 @@
     display: flex; align-items: center; gap: 6px;
   }
   .day.holiday .day-head { background: #2c1b22; color: #ff6b81; }
+  .day-head .date { font-size: 11.5px; font-weight: 600; color: #6d7885; }
+  .day.holiday .day-head .date { color: #c96b7a; }
   .day-head .badge-holiday {
     font-size: 10.5px; font-weight: 600; color: #ff6b81; background: rgba(255, 107, 129, .1);
     border: 1px solid #5c3038; border-radius: 10px; padding: 1px 7px;
@@ -210,10 +212,22 @@
     <input type="file" id="importFile" accept=".json" style="display:none">
     <button class="btn" id="syncBtn">실시간 동기화 설정</button>
     <span class="sync-status" id="syncStatus">동기화: 사용 안 함 (이 기기에만 저장)</span>
-    <span class="hint" style="margin-left:auto">v8</span>
+    <span class="hint" style="margin-left:auto">v9</span>
   </footer>
 </div>
-<input type="date" id="datePicker" class="date-hidden">
+<!-- 날짜 선택 다이얼로그 -->
+<div class="overlay" id="dateOverlay">
+  <div class="dialog">
+    <h2>Due date 설정</h2>
+    <p id="dateTaskName" style="margin-bottom:8px"></p>
+    <input type="date" id="datePicker" style="width:100%; border:1px solid #333d49; background:#141920; color:#e9edf2; border-radius:8px; padding:10px; font-size:15px; font-family:inherit; outline:none;">
+    <div class="opts" style="margin-top:14px">
+      <button class="opt primary" id="dateSave"><b>저장</b></button>
+      <button class="opt" id="dateClear"><b>날짜 지우기</b></button>
+      <button class="opt cancel" id="dateCancel">취소</button>
+    </div>
+  </div>
+</div>
 
 <!-- 새 주 시작 다이얼로그 -->
 <div class="overlay" id="newWeekOverlay">
@@ -281,26 +295,52 @@
   var KIND_LABEL = { normal: '보통', urgent: '긴급', nonwork: '업무외' };
   var KIND_NEXT = { normal: 'urgent', urgent: 'nonwork', nonwork: 'normal' };
 
+  /* ---- 대한민국 공휴일 (2026 확정 / 2027 예정) ---- */
+  var HOLIDAYS = {
+    '2026-01-01': '신정', '2026-02-16': '설날 연휴', '2026-02-17': '설날', '2026-02-18': '설날 연휴',
+    '2026-03-01': '삼일절', '2026-03-02': '대체공휴일', '2026-05-05': '어린이날',
+    '2026-05-24': '부처님오신날', '2026-05-25': '대체공휴일', '2026-06-03': '지방선거', '2026-06-06': '현충일',
+    '2026-07-17': '제헌절', '2026-08-15': '광복절', '2026-08-17': '대체공휴일',
+    '2026-09-24': '추석 연휴', '2026-09-25': '추석', '2026-09-26': '추석 연휴',
+    '2026-10-03': '개천절', '2026-10-05': '대체공휴일', '2026-10-09': '한글날', '2026-12-25': '성탄절',
+    '2027-01-01': '신정', '2027-02-06': '설날 연휴', '2027-02-07': '설날', '2027-02-08': '설날 연휴',
+    '2027-02-09': '대체공휴일', '2027-03-01': '삼일절', '2027-05-05': '어린이날', '2027-05-13': '부처님오신날',
+    '2027-06-06': '현충일', '2027-07-17': '제헌절', '2027-07-19': '대체공휴일',
+    '2027-08-15': '광복절', '2027-08-16': '대체공휴일',
+    '2027-09-14': '추석 연휴', '2027-09-15': '추석', '2027-09-16': '추석 연휴',
+    '2027-10-03': '개천절', '2027-10-04': '대체공휴일', '2027-10-09': '한글날', '2027-10-11': '대체공휴일',
+    '2027-12-25': '성탄절', '2027-12-27': '대체공휴일'
+  };
+  function ymd(d) {
+    function z(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate());
+  }
+
   function uid() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
   /* ---- week range ---- */
   function fmt(d) { return (d.getMonth() + 1) + '/' + d.getDate(); }
+  var now = new Date();
+  var weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - (now.getDay() + 6) % 7); // 이번 주 월요일
   (function () {
-    var now = new Date();
-    var dow = (now.getDay() + 6) % 7; // 월=0 기준 (월요일 시작 주)
-    var mon = new Date(now); mon.setDate(now.getDate() - dow);
-    var sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-    document.getElementById('weekRange').textContent = fmt(mon) + ' ~ ' + fmt(sun);
+    var sun = new Date(weekStart); sun.setDate(weekStart.getDate() + 6);
+    document.getElementById('weekRange').textContent = fmt(weekStart) + ' ~ ' + fmt(sun);
   })();
 
-  /* ---- day sections ---- */
+  /* ---- day sections (주말 + 대한민국 공휴일 표시) ---- */
   var daysEl = document.getElementById('days');
-  DAYS.forEach(function (d) {
+  DAYS.forEach(function (d, idx) {
+    var date = new Date(weekStart); date.setDate(weekStart.getDate() + idx);
+    var holidayName = HOLIDAYS[ymd(date)] || null;
+    var isRed = d.holiday || !!holidayName;
+    var badge = holidayName ? holidayName : (d.holiday ? '휴일' : null);
     var sec = document.createElement('section');
-    sec.className = 'day' + (d.holiday ? ' holiday' : '');
+    sec.className = 'day' + (isRed ? ' holiday' : '');
     sec.innerHTML =
       '<div class="day-head">' + d.name +
-      (d.holiday ? ' <span class="badge-holiday">휴일</span>' : '') +
+      ' <span class="date">' + fmt(date) + '</span>' +
+      (badge ? ' <span class="badge-holiday">' + badge + '</span>' : '') +
       ' <span class="cnt" id="cnt-' + d.key + '"></span></div>' +
       '<div class="task-list" data-loc="' + d.key + '" id="list-' + d.key + '"></div>';
     daysEl.appendChild(sec);
@@ -372,15 +412,29 @@
   }
 
   var datePicker = document.getElementById('datePicker');
+  var dateOverlay = document.getElementById('dateOverlay');
   var dateTarget = null;
   function pickDate(t) {
     dateTarget = t;
     datePicker.value = t.due || '';
-    if (datePicker.showPicker) { try { datePicker.showPicker(); } catch (e) { datePicker.click(); } }
-    else datePicker.click();
+    document.getElementById('dateTaskName').textContent = '"' + t.text + '"';
+    dateOverlay.classList.add('show');
   }
-  datePicker.addEventListener('change', function () {
-    if (dateTarget) { dateTarget.due = datePicker.value || null; persistAndRender(); }
+  document.getElementById('dateSave').addEventListener('click', function () {
+    if (dateTarget) { dateTarget.due = datePicker.value || null; }
+    dateOverlay.classList.remove('show');
+    persistAndRender();
+  });
+  document.getElementById('dateClear').addEventListener('click', function () {
+    if (dateTarget) { dateTarget.due = null; }
+    dateOverlay.classList.remove('show');
+    persistAndRender();
+  });
+  document.getElementById('dateCancel').addEventListener('click', function () {
+    dateOverlay.classList.remove('show');
+  });
+  dateOverlay.addEventListener('click', function (e) {
+    if (e.target === dateOverlay) dateOverlay.classList.remove('show');
   });
 
   /* ---- render ---- */
