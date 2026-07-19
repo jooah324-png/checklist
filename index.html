@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#12151a">
+<title>Checklist</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { -webkit-text-size-adjust: 100%; color-scheme: dark; }
+  body {
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    background: #12151a; color: #e9edf2; font-size: 14px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 16px; }
+
+  /* ---------- header ---------- */
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  header h1 { font-size: 19px; font-weight: 700; color: #f2f5f9; }
+  .week { color: #8b96a5; font-size: 13px; }
+  .spacer { flex: 1; }
+  .progress { font-size: 13px; color: #cfd6de; font-weight: 600; }
+  .toolbar { display: flex; gap: 6px; align-items: center; margin: 8px 0 14px; flex-wrap: wrap; }
+  .btn {
+    border: 1px solid #333d49; background: #1c2129; color: #cdd6e0; border-radius: 8px;
+    padding: 6px 11px; font-size: 12.5px; cursor: pointer; font-family: inherit;
+  }
+  .btn:active { background: #242c37; }
+  .btn.danger-armed { border-color: #ff4d6d; color: #ff5c78; font-weight: 600; }
+  .hint { font-size: 12px; color: #6d7885; }
+
+  /* ---------- layout ---------- */
+  .layout { display: grid; grid-template-columns: 1fr 300px; gap: 16px; align-items: start; }
+  .days { grid-column: 1; grid-row: 1 / span 2; }
+  .backlog-panel { grid-column: 2; }
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+    .days { grid-column: auto; grid-row: auto; }
+    .backlog-panel { grid-column: auto; order: -1; position: static; }
+    .memo-panel { order: 1; }   /* 모바일에서는 요일 아래에 배치 */
+  }
+
+  /* ---------- day sections ---------- */
+  .days { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 800px) { .days { grid-template-columns: 1fr; } }
+  .day { background: #1c2129; border: 1px solid #2b323d; border-radius: 10px; overflow: hidden; }
+  .day-head {
+    padding: 8px 12px; font-weight: 700; font-size: 13px; background: #242b35; color: #dbe2ea;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .day.holiday .day-head { background: #2c1b22; color: #ff6b81; }
+  .day-head .badge-holiday {
+    font-size: 10.5px; font-weight: 600; color: #ff6b81; background: rgba(255, 107, 129, .1);
+    border: 1px solid #5c3038; border-radius: 10px; padding: 1px 7px;
+  }
+  .day-head .cnt { margin-left: auto; font-size: 11.5px; color: #6d7885; font-weight: 600; }
+  .task-list { min-height: 44px; padding: 6px; display: flex; flex-direction: column; gap: 5px; }
+  .task-list.drag-over { background: #1e2833; outline: 2px dashed #38b6ff; outline-offset: -3px; border-radius: 8px; }
+
+  /* ---------- backlog ---------- */
+  .backlog-panel {
+    background: #1c2129; border: 1px solid #2b323d; border-radius: 10px; overflow: hidden;
+  }
+  .backlog-head { padding: 10px 12px; background: #0d1117; color: #f2f5f9; font-weight: 700; font-size: 13px;
+    display: flex; align-items: center; }
+  .backlog-head .cnt { margin-left: auto; font-size: 11.5px; font-weight: 600; color: #8b96a5; }
+  .backlog-add { display: flex; gap: 6px; padding: 10px 10px 4px; }
+  .backlog-add input {
+    flex: 1; border: 1px solid #333d49; background: #141920; color: #e9edf2; border-radius: 8px;
+    padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none; min-width: 0;
+  }
+  .backlog-add input::placeholder { color: #55606d; }
+  .backlog-add input:focus { border-color: #38b6ff; }
+  .backlog-add button {
+    border: none; background: #2f6feb; color: #fff; border-radius: 8px; padding: 0 14px;
+    font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .backlog-panel .task-list { padding: 8px 10px 10px; }
+
+  /* ---------- task card ---------- */
+  .task {
+    background: #232a34; border: 1px solid #313a46; border-radius: 8px; padding: 7px 8px;
+    display: flex; align-items: center; gap: 7px; cursor: grab;
+    box-shadow: 0 1px 2px rgba(0,0,0,.25);
+    touch-action: pan-y;           /* 기본은 스크롤 허용, 길게 누르면 드래그 */
+    user-select: none; -webkit-user-select: none;
+  }
+  .task.dragging { opacity: .35; }
+  .task.drag-ghost {
+    position: fixed; z-index: 999; pointer-events: none; opacity: .95;
+    box-shadow: 0 8px 24px rgba(0,0,0,.55); transform: rotate(1.5deg);
+  }
+  .task.urgent { border-left: 3px solid #ff4d6d; }
+  .task.nonwork { border-left: 3px solid #38b6ff; }
+  .task.done { background: #1b2028; }
+  .task.done .txt { color: #5f6a77; text-decoration: line-through; }
+  .task .chk { width: 16px; height: 16px; accent-color: #38b6ff; flex: none; cursor: pointer; }
+  .task .txt { flex: 1; font-size: 13px; line-height: 1.35; word-break: break-all; color: #e9edf2; }
+  .task .txt input {
+    width: 100%; border: 1px solid #4a5665; background: #141920; color: #e9edf2;
+    border-radius: 5px; padding: 3px 6px; font-size: 13px; font-family: inherit; outline: none;
+  }
+  .chip {
+    flex: none; font-size: 10.5px; font-weight: 700; border-radius: 10px; padding: 2px 8px;
+    cursor: pointer; border: none; font-family: inherit;
+  }
+  .chip.normal { background: #2c3542; color: #a7b4c4; }
+  .chip.urgent { background: rgba(255, 77, 109, .16); color: #ff5c78; }
+  .chip.nonwork { background: rgba(56, 182, 255, .16); color: #4dc3ff; }
+  .due {
+    flex: none; font-size: 11px; color: #93a0b0; cursor: pointer; border: none; background: none;
+    font-family: inherit; padding: 2px 4px; border-radius: 5px;
+  }
+  .due.overdue { color: #ff5c78; font-weight: 700; }
+  .due.empty { color: #4d5866; }
+  .del {
+    flex: none; border: none; background: none; color: #56616e; font-size: 15px;
+    cursor: pointer; padding: 0 2px; line-height: 1; font-family: inherit;
+  }
+  .del:active { color: #ff5c78; }
+  /* backlog·memo 카드: 업무 내용만 표시 */
+  .backlog-panel .task .chk, .backlog-panel .task .chip, .backlog-panel .task .due { display: none; }
+
+  /* 기억해둘 일: 앰버 포인트 */
+  .memo-head { background: #241d0d; color: #ffc94d; }
+  .memo-head .cnt { color: #a8905c; }
+  .memo-panel .task { border-left: 3px solid #ffb224; }
+  .memo-panel .backlog-add button { background: #b07c14; }
+  .memo-panel .backlog-add input:focus { border-color: #ffb224; }
+
+  .placeholder {
+    border: 2px dashed #4a5665; border-radius: 8px; background: #1e2833; height: 34px; flex: none;
+  }
+  .empty-note { font-size: 12px; color: #4d5866; text-align: center; padding: 6px 0; pointer-events: none; }
+  footer { margin-top: 18px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type="date"].date-hidden { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; }
+
+  /* ---------- overlay dialog ---------- */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, .62); z-index: 1000;
+    display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .overlay.show { display: flex; }
+  .dialog {
+    background: #1c2129; border: 1px solid #2b323d; border-radius: 14px; padding: 20px;
+    width: 100%; max-width: 380px; box-shadow: 0 20px 50px rgba(0,0,0,.6);
+  }
+  .dialog h2 { font-size: 15px; font-weight: 700; margin-bottom: 6px; color: #f2f5f9; }
+  .dialog p { font-size: 12.5px; color: #8b96a5; line-height: 1.5; margin-bottom: 14px; }
+  .dialog .opts { display: flex; flex-direction: column; gap: 7px; }
+  .dialog .opt {
+    border: 1px solid #333d49; background: #232a34; border-radius: 9px; padding: 10px 12px;
+    font-size: 13px; font-family: inherit; cursor: pointer; text-align: left; color: #dbe2ea;
+  }
+  .dialog .opt b { display: block; font-size: 13px; }
+  .dialog .opt small { color: #8b96a5; font-size: 11.5px; }
+  .dialog .opt.primary { border-color: #2f6feb; background: #2f6feb; color: #fff; }
+  .dialog .opt.primary small { color: #c5d5f7; }
+  .dialog .opt.cancel { border: none; background: none; color: #6d7885; text-align: center; }
+  .dialog label { display: block; font-size: 12px; font-weight: 600; color: #cdd6e0; margin: 10px 0 4px; }
+  .dialog input[type="text"], .dialog input[type="url"], .dialog input[type="password"] {
+    width: 100%; border: 1px solid #333d49; background: #141920; color: #e9edf2;
+    border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none;
+  }
+  .dialog input::placeholder { color: #55606d; }
+  .dialog input:focus { border-color: #38b6ff; }
+  .sync-status { font-size: 12px; color: #6d7885; }
+  .sync-status.on { color: #3ddc84; font-weight: 600; }
+  .sync-status.err { color: #ff5c78; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Checklist</h1>
+    <span class="week" id="weekRange"></span>
+    <span class="spacer"></span>
+    <span class="progress" id="progress"></span>
+  </header>
+  <div class="toolbar">
+    <button class="btn" id="newWeekBtn">새 주 시작</button>
+    <span class="hint">완료 업무는 삭제되고, 미완료 업무는 전체 과업 리스트로 돌아갑니다</span>
+  </div>
+
+  <div class="layout">
+    <div class="days" id="days"></div>
+
+    <aside class="backlog-panel">
+      <div class="backlog-head">전체 과업 리스트 <span class="cnt" id="backlogCnt"></span></div>
+      <div class="backlog-add">
+        <input type="text" id="newTask" placeholder="업무 내용 입력 후 Enter" autocomplete="off">
+        <button id="addBtn">추가</button>
+      </div>
+      <div class="task-list" data-loc="backlog" id="list-backlog"></div>
+    </aside>
+
+    <aside class="backlog-panel memo-panel">
+      <div class="backlog-head memo-head">Reminder <span class="cnt" id="memoCnt"></span></div>
+      <div class="backlog-add">
+        <input type="text" id="newMemo" placeholder="마감 없는 단순 과업 입력 후 Enter" autocomplete="off">
+        <button id="addMemoBtn">추가</button>
+      </div>
+      <div class="task-list" data-loc="memo" id="list-memo"></div>
+    </aside>
+  </div>
+
+  <footer>
+    <button class="btn" id="exportBtn">백업 내보내기</button>
+    <button class="btn" id="importBtn">백업 가져오기</button>
+    <input type="file" id="importFile" accept=".json" style="display:none">
+    <button class="btn" id="syncBtn">실시간 동기화 설정</button>
+    <span class="sync-status" id="syncStatus">동기화: 사용 안 함 (이 기기에만 저장)</span>
+    <span class="hint" style="margin-left:auto">v8</span>
+  </footer>
+</div>
+<input type="date" id="datePicker" class="date-hidden">
+
+<!-- 새 주 시작 다이얼로그 -->
+<div class="overlay" id="newWeekOverlay">
+  <div class="dialog">
+    <h2>새 주 시작</h2>
+    <p>완료된 업무는 삭제됩니다. 남아 있는 잔여 업무는 어떻게 할까요?</p>
+    <div class="opts">
+      <button class="opt primary" id="nwCarry"><b>잔여 업무 이월</b><small>미완료 업무를 전체 과업 리스트로 옮겨 새 주에 다시 배치</small></button>
+      <button class="opt" id="nwKeep"><b>요일에 그대로 두기</b><small>미완료 업무를 지금 요일 위치에 유지한 채 완료분만 정리</small></button>
+      <button class="opt cancel" id="nwCancel">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- 동기화 설정 다이얼로그 -->
+<div class="overlay" id="syncOverlay">
+  <div class="dialog">
+    <h2>실시간 동기화 설정</h2>
+    <p>Firebase 무료 데이터베이스를 연결하면 PC와 핸드폰에서 같은 목록을 실시간으로 보고 수정할 수 있습니다. 설정 방법은 안내 문서를 참고하세요.</p>
+    <label>데이터베이스 URL</label>
+    <input type="url" id="syncUrl" placeholder="https://xxxx-default-rtdb.firebaseio.com">
+    <label>동기화 코드 (기기끼리 같게, 남이 못 맞출 문구로)</label>
+    <input type="text" id="syncCode" placeholder="예: jooah-secret-2026" autocomplete="off">
+    <div class="opts" style="margin-top:14px">
+      <button class="opt primary" id="syncSave"><b>저장하고 연결</b></button>
+      <button class="opt" id="syncOff"><b>동기화 끄기</b></button>
+      <button class="opt cancel" id="syncCancel">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var DAYS = [
+    { key: 'mon', name: '월요일', holiday: false },
+    { key: 'tue', name: '화요일', holiday: false },
+    { key: 'wed', name: '수요일', holiday: false },
+    { key: 'thu', name: '목요일', holiday: false },
+    { key: 'fri', name: '금요일', holiday: false },
+    { key: 'sat', name: '토요일', holiday: true },
+    { key: 'sun', name: '일요일', holiday: true }
+  ];
+  var STORE_KEY = 'weekly-checklist-v1';
+
+  /* ---- storage (localStorage 불가 환경에서는 메모리로 대체) ---- */
+  var mem = null;
+  function loadState() {
+    try { var raw = localStorage.getItem(STORE_KEY); return raw ? JSON.parse(raw) : null; }
+    catch (e) { return mem; }
+  }
+  function saveState(s) {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); }
+    catch (e) { mem = s; }
+  }
+
+  var state = loadState() || { tasks: [], updatedAt: 0 };
+  // task: {id, text, kind:'normal'|'urgent'|'nonwork', due:'YYYY-MM-DD'|null, done:bool, loc:'backlog'|dayKey}
+  if (!state.updatedAt) state.updatedAt = 0;
+  // 구버전 데이터 마이그레이션 (priority → kind)
+  state.tasks.forEach(function (t) {
+    if (!t.kind) { t.kind = (t.priority === 'urgent') ? 'urgent' : 'normal'; delete t.priority; }
+  });
+
+  var KIND_LABEL = { normal: '보통', urgent: '긴급', nonwork: '업무외' };
+  var KIND_NEXT = { normal: 'urgent', urgent: 'nonwork', nonwork: 'normal' };
+
+  function uid() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  /* ---- week range ---- */
+  function fmt(d) { return (d.getMonth() + 1) + '/' + d.getDate(); }
+  (function () {
+    var now = new Date();
+    var dow = (now.getDay() + 6) % 7; // 월=0 기준 (월요일 시작 주)
+    var mon = new Date(now); mon.setDate(now.getDate() - dow);
+    var sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    document.getElementById('weekRange').textContent = fmt(mon) + ' ~ ' + fmt(sun);
+  })();
+
+  /* ---- day sections ---- */
+  var daysEl = document.getElementById('days');
+  DAYS.forEach(function (d) {
+    var sec = document.createElement('section');
+    sec.className = 'day' + (d.holiday ? ' holiday' : '');
+    sec.innerHTML =
+      '<div class="day-head">' + d.name +
+      (d.holiday ? ' <span class="badge-holiday">휴일</span>' : '') +
+      ' <span class="cnt" id="cnt-' + d.key + '"></span></div>' +
+      '<div class="task-list" data-loc="' + d.key + '" id="list-' + d.key + '"></div>';
+    daysEl.appendChild(sec);
+  });
+
+  /* ---- task card ---- */
+  function taskCard(t) {
+    var el = document.createElement('div');
+    el.className = 'task' + (t.kind === 'urgent' ? ' urgent' : '') +
+                   (t.kind === 'nonwork' ? ' nonwork' : '') + (t.done ? ' done' : '');
+    el.dataset.id = t.id;
+
+    var chk = document.createElement('input');
+    chk.type = 'checkbox'; chk.className = 'chk'; chk.checked = t.done;
+    chk.addEventListener('change', function () { t.done = chk.checked; persistAndRender(); });
+
+    var txt = document.createElement('div');
+    txt.className = 'txt'; txt.textContent = t.text;
+    txt.addEventListener('click', function () {
+      if (justDragged) return;
+      startEdit(t, txt);
+    });
+
+    var chip = document.createElement('button');
+    chip.className = 'chip ' + t.kind;
+    chip.textContent = KIND_LABEL[t.kind];
+    chip.title = '탭하여 전환: 보통 → 긴급 → 업무외';
+    chip.addEventListener('click', function () {
+      t.kind = KIND_NEXT[t.kind];
+      persistAndRender();
+    });
+
+    var due = document.createElement('button');
+    due.className = 'due';
+    if (t.due) {
+      var p = t.due.split('-');
+      due.textContent = '~' + parseInt(p[1], 10) + '/' + parseInt(p[2], 10);
+      var today = new Date(); today.setHours(0, 0, 0, 0);
+      if (!t.done && new Date(t.due + 'T00:00:00') < today) due.classList.add('overdue');
+    } else {
+      due.textContent = '+날짜'; due.classList.add('empty');
+    }
+    due.title = 'due date 설정';
+    due.addEventListener('click', function () { pickDate(t); });
+
+    var del = document.createElement('button');
+    del.className = 'del'; del.textContent = '×'; del.title = '삭제';
+    del.addEventListener('click', function () {
+      state.tasks = state.tasks.filter(function (x) { return x.id !== t.id; });
+      persistAndRender();
+    });
+
+    el.appendChild(chk); el.appendChild(txt); el.appendChild(chip); el.appendChild(due); el.appendChild(del);
+    return el;
+  }
+
+  function startEdit(t, txtEl) {
+    var input = document.createElement('input');
+    input.type = 'text'; input.value = t.text;
+    txtEl.textContent = ''; txtEl.appendChild(input);
+    input.focus(); input.setSelectionRange(input.value.length, input.value.length);
+    function commit() {
+      var v = input.value.trim();
+      if (v) t.text = v;
+      persistAndRender();
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') input.blur(); });
+  }
+
+  var datePicker = document.getElementById('datePicker');
+  var dateTarget = null;
+  function pickDate(t) {
+    dateTarget = t;
+    datePicker.value = t.due || '';
+    if (datePicker.showPicker) { try { datePicker.showPicker(); } catch (e) { datePicker.click(); } }
+    else datePicker.click();
+  }
+  datePicker.addEventListener('change', function () {
+    if (dateTarget) { dateTarget.due = datePicker.value || null; persistAndRender(); }
+  });
+
+  /* ---- render ---- */
+  function render() {
+    var locs = ['backlog', 'memo'].concat(DAYS.map(function (d) { return d.key; }));
+    locs.forEach(function (loc) {
+      var list = document.getElementById('list-' + loc);
+      list.innerHTML = '';
+      var items = state.tasks.filter(function (t) { return t.loc === loc; });
+      items.forEach(function (t) { list.appendChild(taskCard(t)); });
+      if (!items.length) {
+        var note = document.createElement('div');
+        note.className = 'empty-note';
+        note.textContent = (loc === 'backlog') ? '여기에 업무를 추가하세요'
+                         : (loc === 'memo') ? '마감은 없지만 잊으면 안 되는 일을 적어두세요'
+                         : '여기로 드래그';
+        list.appendChild(note);
+      }
+      if (loc !== 'backlog' && loc !== 'memo') {
+        var doneItems = items.filter(function (t) { return t.done; }).length;
+        document.getElementById('cnt-' + loc).textContent = items.length ? (doneItems + '/' + items.length) : '';
+      }
+    });
+    var assigned = state.tasks.filter(function (t) { return t.loc !== 'backlog' && t.loc !== 'memo'; });
+    var done = assigned.filter(function (t) { return t.done; }).length;
+    document.getElementById('progress').textContent = '완료 ' + done + ' / 전체 ' + assigned.length;
+    document.getElementById('backlogCnt').textContent =
+      '대기 ' + state.tasks.filter(function (t) { return t.loc === 'backlog'; }).length + '건';
+    document.getElementById('memoCnt').textContent =
+      state.tasks.filter(function (t) { return t.loc === 'memo'; }).length + '건';
+  }
+
+  function persistAndRender() {
+    state.updatedAt = Date.now();
+    saveState(state);
+    render();
+    schedulePush();
+  }
+
+  /* =====================================================
+     드래그 앤 드롭 (Pointer Events — 마우스 + 터치 지원)
+     - 마우스: 누르고 6px 이상 움직이면 드래그 시작
+     - 터치: 220ms 길게 누르면 드래그 시작 (짧게 밀면 스크롤)
+  ===================================================== */
+  var drag = null;          // {task, card, ghost, placeholder, offsetX, offsetY, lastX, lastY}
+  var pending = null;       // {card, id, startX, startY, timer, isTouch}
+  var justDragged = false;  // 드래그 직후 click(편집) 무시용
+  var HOLD_MS = 220, MOVE_THRESHOLD = 6, TOUCH_CANCEL_MOVE = 10;
+
+  document.addEventListener('pointerdown', function (e) {
+    var card = e.target.closest('.task');
+    if (!card) return;
+    if (e.target.closest('input, button')) return;   // 체크박스/버튼은 드래그 시작 제외
+    if (card.querySelector('.txt input')) return;    // 편집 중이면 제외
+    var isTouch = (e.pointerType === 'touch');
+    pending = { card: card, id: card.dataset.id, startX: e.clientX, startY: e.clientY, isTouch: isTouch, timer: null };
+    if (isTouch) {
+      pending.timer = setTimeout(function () {
+        if (pending) startDrag(pending.card, pending.startX, pending.startY);
+      }, HOLD_MS);
+    }
+  });
+
+  document.addEventListener('pointermove', function (e) {
+    if (drag) { moveDrag(e.clientX, e.clientY); return; }
+    if (!pending) return;
+    var dx = Math.abs(e.clientX - pending.startX), dy = Math.abs(e.clientY - pending.startY);
+    if (pending.isTouch) {
+      // 홀드 전에 크게 움직이면 스크롤 의도로 보고 취소
+      if (dx > TOUCH_CANCEL_MOVE || dy > TOUCH_CANCEL_MOVE) cancelPending();
+    } else {
+      if (dx > MOVE_THRESHOLD || dy > MOVE_THRESHOLD) {
+        var c = pending.card, x = e.clientX, y = e.clientY;
+        cancelPending();
+        startDrag(c, x, y);
+        moveDrag(x, y);
+      }
+    }
+  });
+
+  document.addEventListener('pointerup', endPointer);
+  document.addEventListener('pointercancel', endPointer);
+  function endPointer() {
+    cancelPending();
+    if (drag) finishDrag();
+  }
+
+  // 드래그 중 터치 스크롤 차단
+  document.addEventListener('touchmove', function (e) {
+    if (drag) e.preventDefault();
+  }, { passive: false });
+
+  function cancelPending() {
+    if (pending && pending.timer) clearTimeout(pending.timer);
+    pending = null;
+  }
+
+  function startDrag(card, x, y) {
+    cancelPending();
+    var t = state.tasks.find(function (k) { return k.id === card.dataset.id; });
+    if (!t) return;
+    var rect = card.getBoundingClientRect();
+    var ghost = card.cloneNode(true);
+    ghost.classList.add('drag-ghost');
+    ghost.style.width = rect.width + 'px';
+    ghost.style.left = rect.left + 'px';
+    ghost.style.top = rect.top + 'px';
+    document.body.appendChild(ghost);
+    card.classList.add('dragging');
+    var ph = document.createElement('div');
+    ph.className = 'placeholder';
+    drag = { task: t, card: card, ghost: ghost, placeholder: ph,
+             offsetX: x - rect.left, offsetY: y - rect.top, lastX: x, lastY: y };
+    if (navigator.vibrate) { try { navigator.vibrate(10); } catch (err) {} }
+    autoScrollLoop();
+  }
+
+  function moveDrag(x, y) {
+    drag.lastX = x; drag.lastY = y;
+    drag.ghost.style.left = (x - drag.offsetX) + 'px';
+    drag.ghost.style.top = (y - drag.offsetY) + 'px';
+
+    var el = document.elementFromPoint(x, y);
+    var list = el ? el.closest('.task-list') : null;
+    document.querySelectorAll('.task-list.drag-over').forEach(function (l) {
+      if (l !== list) l.classList.remove('drag-over');
+    });
+    if (!list) { if (drag.placeholder.parentNode) drag.placeholder.remove(); return; }
+    list.classList.add('drag-over');
+
+    // 삽입 위치 계산 (드래그 중인 카드 제외)
+    var cards = Array.prototype.filter.call(list.querySelectorAll('.task'), function (c) {
+      return c !== drag.card;
+    });
+    var before = null;
+    for (var i = 0; i < cards.length; i++) {
+      var r = cards[i].getBoundingClientRect();
+      if (y < r.top + r.height / 2) { before = cards[i]; break; }
+    }
+    if (before) list.insertBefore(drag.placeholder, before);
+    else list.appendChild(drag.placeholder);
+  }
+
+  function finishDrag() {
+    var d = drag; drag = null;
+    d.ghost.remove();
+    d.card.classList.remove('dragging');
+    document.querySelectorAll('.task-list.drag-over').forEach(function (l) { l.classList.remove('drag-over'); });
+
+    var ph = d.placeholder;
+    if (ph.parentNode) {
+      var list = ph.parentNode;
+      var newLoc = list.dataset.loc;
+      // placeholder 앞에 있는 카드 수 = 삽입 인덱스
+      var idx = 0, node = ph.previousElementSibling;
+      while (node) { if (node.classList.contains('task') && node !== d.card) idx++; node = node.previousElementSibling; }
+      ph.remove();
+      // state 재배열
+      state.tasks = state.tasks.filter(function (k) { return k.id !== d.task.id; });
+      d.task.loc = newLoc;
+      var targetIds = state.tasks.filter(function (k) { return k.loc === newLoc; });
+      if (idx >= targetIds.length) {
+        // 해당 위치의 마지막 뒤에 삽입
+        var lastOfLoc = -1;
+        for (var i = 0; i < state.tasks.length; i++) if (state.tasks[i].loc === newLoc) lastOfLoc = i;
+        state.tasks.splice(lastOfLoc + 1, 0, d.task);
+      } else {
+        var seen = 0, insertAt = state.tasks.length;
+        for (var j = 0; j < state.tasks.length; j++) {
+          if (state.tasks[j].loc === newLoc) {
+            if (seen === idx) { insertAt = j; break; }
+            seen++;
+          }
+        }
+        state.tasks.splice(insertAt, 0, d.task);
+      }
+      justDragged = true;
+      setTimeout(function () { justDragged = false; }, 300);
+      persistAndRender();
+    } else {
+      ph.remove();
+      justDragged = true;
+      setTimeout(function () { justDragged = false; }, 300);
+      render();
+    }
+  }
+
+  /* 화면 가장자리 자동 스크롤 */
+  function autoScrollLoop() {
+    if (!drag) return;
+    var EDGE = 70, SPEED = 14;
+    if (drag.lastY < EDGE) window.scrollBy(0, -SPEED);
+    else if (drag.lastY > window.innerHeight - EDGE) window.scrollBy(0, SPEED);
+    requestAnimationFrame(autoScrollLoop);
+  }
+
+  /* ---- add task ---- */
+  var input = document.getElementById('newTask');
+  function addTask() {
+    var v = input.value.trim();
+    if (!v) return;
+    state.tasks.push({ id: uid(), text: v, kind: 'normal', due: null, done: false, loc: 'backlog' });
+    input.value = '';
+    persistAndRender();
+    input.focus();
+  }
+  document.getElementById('addBtn').addEventListener('click', addTask);
+  input.addEventListener('keydown', function (e) { if (e.key === 'Enter') addTask(); });
+
+  /* ---- add memo (기억해둘 일) ---- */
+  var memoInput = document.getElementById('newMemo');
+  function addMemo() {
+    var v = memoInput.value.trim();
+    if (!v) return;
+    state.tasks.push({ id: uid(), text: v, kind: 'normal', due: null, done: false, loc: 'memo' });
+    memoInput.value = '';
+    persistAndRender();
+    memoInput.focus();
+  }
+  document.getElementById('addMemoBtn').addEventListener('click', addMemo);
+  memoInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') addMemo(); });
+
+  /* ---- new week: 잔여 업무 이월 다이얼로그 ---- */
+  var nwOverlay = document.getElementById('newWeekOverlay');
+  document.getElementById('newWeekBtn').addEventListener('click', function () {
+    nwOverlay.classList.add('show');
+  });
+  document.getElementById('nwCancel').addEventListener('click', function () {
+    nwOverlay.classList.remove('show');
+  });
+  document.getElementById('nwCarry').addEventListener('click', function () {
+    // 기억해둘 일(memo)은 새 주 시작과 무관하게 그대로 유지
+    state.tasks = state.tasks.filter(function (t) { return !t.done || t.loc === 'memo'; });
+    state.tasks.forEach(function (t) { if (t.loc !== 'backlog' && t.loc !== 'memo') t.loc = 'backlog'; });
+    nwOverlay.classList.remove('show');
+    persistAndRender();
+  });
+  document.getElementById('nwKeep').addEventListener('click', function () {
+    state.tasks = state.tasks.filter(function (t) { return !t.done || t.loc === 'memo'; });
+    nwOverlay.classList.remove('show');
+    persistAndRender();
+  });
+  nwOverlay.addEventListener('click', function (e) {
+    if (e.target === nwOverlay) nwOverlay.classList.remove('show');
+  });
+
+  /* ---- export / import ---- */
+  document.getElementById('exportBtn').addEventListener('click', function () {
+    var blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'checklist-backup.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  var importFile = document.getElementById('importFile');
+  document.getElementById('importBtn').addEventListener('click', function () { importFile.click(); });
+  importFile.addEventListener('change', function () {
+    var f = importFile.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var data = JSON.parse(reader.result);
+        if (data && Array.isArray(data.tasks)) { state = data; persistAndRender(); }
+      } catch (e) { /* 무시 */ }
+      importFile.value = '';
+    };
+    reader.readAsText(f);
+  });
+
+  /* =====================================================
+     실시간 동기화 (Firebase Realtime Database REST)
+     - 설정: DB URL + 동기화 코드 → 이 기기에 저장
+     - 저장 시 0.8초 뒤 서버로 전송, 3초마다 변경 확인
+     - 최신 updatedAt 우선 (마지막 수정이 이김)
+  ===================================================== */
+  var SYNC_KEY = 'weekly-checklist-sync';
+  function loadSync() {
+    try { var raw = localStorage.getItem(SYNC_KEY); return raw ? JSON.parse(raw) : null; }
+    catch (e) { return null; }
+  }
+  function saveSync(cfg) {
+    try {
+      if (cfg) localStorage.setItem(SYNC_KEY, JSON.stringify(cfg));
+      else localStorage.removeItem(SYNC_KEY);
+    } catch (e) {}
+  }
+  var syncCfg = loadSync();
+  var syncStatusEl = document.getElementById('syncStatus');
+  var pushTimer = null, pollTimer = null, syncBusy = false;
+
+  function endpoint() {
+    if (!syncCfg) return null;
+    var base = syncCfg.url.replace(/\/+$/, '');
+    return base + '/checklist/' + encodeURIComponent(syncCfg.code) + '.json';
+  }
+  function setStatus(text, cls) {
+    syncStatusEl.textContent = text;
+    syncStatusEl.className = 'sync-status' + (cls ? ' ' + cls : '');
+  }
+  function timeStr() {
+    var d = new Date();
+    function z(n) { return (n < 10 ? '0' : '') + n; }
+    return z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds());
+  }
+
+  function schedulePush() {
+    if (!syncCfg) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(pushNow, 800);
+  }
+  function pushNow() {
+    var url = endpoint();
+    if (!url) return;
+    fetch(url, { method: 'PUT', body: JSON.stringify(state) })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.status);
+        setStatus('동기화: 연결됨 · 저장 ' + timeStr(), 'on');
+      })
+      .catch(function () { setStatus('동기화: 전송 실패 (네트워크/설정 확인)', 'err'); });
+  }
+  function pullNow() {
+    var url = endpoint();
+    if (!url || syncBusy) return;
+    // 카드 텍스트 편집 중에는 덮어쓰지 않음
+    if (document.querySelector('.task .txt input')) return;
+    if (drag) return;
+    syncBusy = true;
+    fetch(url)
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.status);
+        return r.json();
+      })
+      .then(function (remote) {
+        syncBusy = false;
+        if (remote && Array.isArray(remote.tasks)) {
+          if ((remote.updatedAt || 0) > (state.updatedAt || 0)) {
+            state = remote;
+            state.tasks.forEach(function (t) { if (!t.kind) t.kind = 'normal'; });
+            saveState(state);
+            render();
+            setStatus('동기화: 연결됨 · 수신 ' + timeStr(), 'on');
+          } else {
+            setStatus('동기화: 연결됨 · 확인 ' + timeStr(), 'on');
+          }
+        } else if (remote === null) {
+          // 서버가 비어 있으면 현재 데이터를 올림
+          pushNow();
+        }
+      })
+      .catch(function () {
+        syncBusy = false;
+        setStatus('동기화: 연결 실패 (네트워크/설정 확인)', 'err');
+      });
+  }
+  function startSync() {
+    clearInterval(pollTimer);
+    if (!syncCfg) { setStatus('동기화: 사용 안 함 (이 기기에만 저장)'); return; }
+    setStatus('동기화: 연결 중…', '');
+    pullNow();
+    pollTimer = setInterval(pullNow, 3000);
+  }
+
+  /* ---- sync dialog ---- */
+  var syncOverlay = document.getElementById('syncOverlay');
+  var syncUrlIn = document.getElementById('syncUrl');
+  var syncCodeIn = document.getElementById('syncCode');
+  document.getElementById('syncBtn').addEventListener('click', function () {
+    if (syncCfg) { syncUrlIn.value = syncCfg.url; syncCodeIn.value = syncCfg.code; }
+    syncOverlay.classList.add('show');
+  });
+  document.getElementById('syncCancel').addEventListener('click', function () {
+    syncOverlay.classList.remove('show');
+  });
+  syncOverlay.addEventListener('click', function (e) {
+    if (e.target === syncOverlay) syncOverlay.classList.remove('show');
+  });
+  document.getElementById('syncSave').addEventListener('click', function () {
+    var url = syncUrlIn.value.trim(), code = syncCodeIn.value.trim();
+    if (!/^https:\/\//.test(url) || !code) {
+      setStatus('동기화: URL(https://…)과 코드를 모두 입력하세요', 'err');
+      return;
+    }
+    syncCfg = { url: url, code: code };
+    saveSync(syncCfg);
+    syncOverlay.classList.remove('show');
+    startSync();
+  });
+  document.getElementById('syncOff').addEventListener('click', function () {
+    syncCfg = null;
+    saveSync(null);
+    clearInterval(pollTimer);
+    syncOverlay.classList.remove('show');
+    setStatus('동기화: 사용 안 함 (이 기기에만 저장)');
+  });
+
+  render();
+  startSync();
+})();
+</script>
+</body>
+</html>
